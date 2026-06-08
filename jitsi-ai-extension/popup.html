@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <img src="icons/icon48.png" alt="Logo" class="logo">
+            <h1>Meeting Pro</h1>
+            <p class="subtitle">Интеллектуальная запись встреч</p>
+        </header>
+
+        <main>
+            <div class="input-group">
+                <label for="apiKey">API Ключ (OpenAI / Groq)</label>
+                <input type="password" id="apiKey" placeholder="gsk_... / sk-...">
+            </div>
+
+            <details class="advanced-settings">
+                <summary>Дополнительные настройки</summary>
+                <div class="input-group">
+                    <label for="apiUrl">API Base URL</label>
+                    <input type="text" id="apiUrl" value="https://api.openai.com/v1" placeholder="https://api.groq.com/openai/v1">
+                </div>
+            </details>
+
+            <div class="controls">
+                <button id="recordBtn" class="btn primary">Начать запись</button>
+            </div>
+
+            <div id="status" class="status-box">Готов к работе</div>
+
+            <div id="result" class="result-box hidden">
+                <h2>Итог встречи</h2>
+                <div id="summaryContent" class="markdown-body"></div>
+                <div class="actions">
+                    <button id="copyBtn" class="btn secondary">Копировать</button>
+                    <button id="downloadBtn" class="btn secondary">Отчет .txt</button>
+                    <button id="downloadAudioBtn" class="btn secondary">Аудио .webm</button>
+                    <button id="downloadTranscriptBtn" class="btn secondary">Транскрипт .txt</button>
+                </div>
+            </div>
+        </main>
+    </div>
+    <script src="popup.js"></script>
+</body>
+</html>
