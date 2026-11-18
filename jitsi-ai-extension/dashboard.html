@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="ru">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Meeting Pro</title><link rel="stylesheet" href="style.css"></head>
+<body>
+  <aside>
+    <a class="brand" href="dashboard.html"><span class="brand-icon">m</span> meeting<span>pro</span></a>
+    <div class="nav-label">РАБОЧЕЕ ПРОСТРАНСТВО</div>
+    <div class="nav-active">◉ &nbsp; Запись встреч</div>
+    <div class="history-head"><h2>История</h2><span id="historyCount">0</span></div>
+    <div id="history" class="history"><p class="muted">Здесь появятся ваши встречи</p></div>
+    <div class="sidebar-note"><span class="dot"></span> Аудио хранится на устройстве<p>Отправка в AI — только по кнопке «Расшифровать».</p></div>
+  </aside>
+  <main>
+    <header><span class="eyebrow">ВАШ ПОМОЩНИК НА ВСТРЕЧАХ</span><span class="tag">Локальная запись</span></header>
+    <h1>Разговор — в дело.</h1>
+    <p class="intro">Запишите встречу. Вернитесь к важному.<br>Получите расшифровку, решения и следующие шаги.</p>
+    <div class="services"><span>Google Meet</span><span>Zoom</span><span>Teams</span><span>Jitsi</span><span>Discord</span><span>Telegram</span></div>
+    <div class="workspace">
+      <section class="card recording-card">
+        <div class="card-heading"><div><span class="step">01 / ЗАПИСЬ</span><h2>Новая встреча</h2></div><span id="timer" class="timer">00:00</span></div>
+        <label for="title">Название встречи</label><input id="title" maxlength="120" placeholder="Например, планирование команды">
+        <label for="source">Откуда записывать звук</label>
+        <select id="source"><option value="browser">Вкладка браузера</option><option value="desktop">Приложения / весь экран</option><option value="microphone">Только микрофон</option></select>
+        <p id="sourceHint" class="hint">Выберите вкладку со встречей и включите «Поделиться аудио вкладки».</p>
+        <label class="check"><input id="microphone" type="checkbox" checked> Добавить мой микрофон</label>
+        <p class="hint">Используйте наушники. Микрофон записывается независимо от кнопки mute в приложении встречи.</p>
+        <button id="prepare" class="button secondary">Выбрать источник и проверить звук</button>
+        <div class="meters"><div><span>Звук встречи</span><meter id="meetingLevel" min="0" max="1" value="0"></meter></div><div><span>Микрофон</span><meter id="micLevel" min="0" max="1" value="0"></meter></div></div>
+        <label class="check consent"><input id="consent" type="checkbox"> Участники знают о записи</label>
+        <div class="controls"><button id="start" class="button primary" disabled>● &nbsp; Начать запись</button><button id="stop" class="button danger" disabled>■ &nbsp; Остановить</button></div>
+        <p id="status" class="status" role="status" aria-live="polite">Выберите источник для проверки звука.</p>
+        <p class="hint">Оставьте эту вкладку открытой во время записи. Видео не сохраняется. Системный звук зависит от браузера и ОС.</p>
+      </section>
+      <section class="card ai-card">
+        <span class="step">02 / РАСШИФРОВКА</span><h2>От аудио к результату</h2>
+        <p class="muted">Записывайте без ключа. Подключите AI, когда будете готовы разобрать встречу.</p>
+        <label for="provider">AI-провайдер</label><select id="provider"><option value="https://api.openai.com/v1">OpenAI</option><option value="https://api.groq.com/openai/v1">Groq</option></select>
+        <label for="apiKey">Ваш API-ключ</label><input id="apiKey" type="password" autocomplete="off" placeholder="Ключ выбранного провайдера">
+        <p class="hint">Ключ хранится до закрытия браузера. API оплачивается по тарифу провайдера.</p>
+        <label for="language">Язык встречи</label><select id="language"><option value="">Определить автоматически</option><option value="ru">Русский</option><option value="kk">Қазақша</option><option value="en">English</option></select>
+        <button id="process" class="button primary" disabled>Расшифровать и создать протокол ↗</button>
+        <p class="hint">Аудио и транскрипт выбранной встречи будут отправлены выбранному провайдеру.</p>
+        <div class="feature-note">Сначала сохраняем оригинал<p>Ошибка сети не удалит запись. Готовые расшифровки отрезков используются при повторной обработке.</p></div>
+      </section>
+    </div>
+    <section class="card result-card">
+      <div class="card-heading"><div><span class="step">03 / РЕЗУЛЬТАТ</span><h2 id="resultTitle">Всё важное останется здесь</h2></div><button id="delete" class="button subtle" disabled>Удалить встречу</button></div>
+      <p id="resultMeta" class="muted">Выберите встречу в истории или создайте новую запись.</p>
+      <div class="result-actions"><button id="downloadReport" class="button secondary" disabled>Скачать протокол .md</button><button id="downloadTranscript" class="button secondary" disabled>Транскрипт .txt</button></div>
+      <pre id="report" class="report">Решения, задачи и полный текст — после расшифровки.</pre>
+      <details><summary>Исходные аудиофайлы <span id="segmentCount"></span></summary><div id="audioFiles" class="audio-files"></div></details>
+    </section>
+    <footer>Meeting Pro · Запись для разных сервисов · Имена собеседников в общем звуке автоматически не определяются</footer>
+  </main>
+  <script src="api.js"></script><script src="store.js"></script><script src="recorder.js"></script><script src="dashboard.js"></script>
+</body></html>
