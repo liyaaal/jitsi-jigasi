@@ -1,87 +1,90 @@
 const { chromium } = require('playwright');
-const path = require('path');
-const fs = require('fs');
-require('dotenv').config();
+const path = require('node:path');
+const fs = require('node:fs/promises');
+const { randomUUID } = require('node:crypto');
+const { atomicJson, processRecordings } = require('./summary');
+require('dotenv').config({ quiet: true });
 
-async function runBot(roomUrl) {
-    const browser = await chromium.launch({
-        headless: true,
-        args: [
-            '--use-fake-ui-for-media-stream',
-            '--use-fake-device-for-media-stream',
-            '--allow-file-access-from-files',
-            '--disable-gesture-requirement-for-media-playback'
-        ]
-    });
-
-    const context = await browser.newContext({
-        permissions: ['microphone'],
-    });
-
-    const page = await context.newPage();
-
-    page.on('console', msg => console.log(`[LOG] ${msg.text()}`));
-
-    const url = new URL(roomUrl);
-    url.hash = 'config.prejoinPageEnabled=false&userInfo.displayName="AI-Recorder"';
-    
-    console.log(`URL: ${url.toString()}`);
-    await page.goto(url.toString(), { waitUntil: 'networkidle' });
-
-    try {
-        const joinSelectors = [
-            'button:has-text("Join meeting")',
-            'button:has-text("Присоединиться")',
-            'button[data-testid="prejoin.joinMeeting"]',
-            '.prejoin-content-button',
-            '[aria-label="Join meeting"]',
-            '[aria-label="Присоединиться к встрече"]'
-        ];
-
-        for (const selector of joinSelectors) {
-            const btn = page.locator(selector).first();
-            if (await btn.isVisible({ timeout: 2000 })) {
-                await btn.click();
-                break;
-            }
-        }
-    } catch (e) {}
-
-    await page.waitForSelector('.videocontainer, #largeVideo', { timeout: 30000 });
-    await new Promise(resolve => setTimeout(resolve, 5000));
-
-    const injectionScript = fs.readFileSync(path.join(__dirname, 'injection.js'), 'utf8');
-    await page.evaluate(injectionScript);
-
-    await page.exposeFunction('handleAudioChunk', async (participantId, displayName, base64Data) => {
-        const dir = path.join(__dirname, 'recordings', participantId);
-        if (!fs.existsSync(dir)) {
-            fs.mkdirSync(dir, { recursive: true });
-            fs.writeFileSync(path.join(dir, 'metadata.json'), JSON.stringify({ participantId, displayName }));
-        }
-        const buffer = Buffer.from(base64Data, 'base64');
-        fs.appendFileSync(path.join(dir, 'audio.webm'), buffer);
-    });
-
-    const duration = process.env.RECORD_DURATION_MS ? parseInt(process.env.RECORD_DURATION_MS) : 30000;
-    
-    let timer;
-    const waitPromise = new Promise(resolve => {
-        timer = setTimeout(resolve, duration);
-    });
-
-    process.on('SIGINT', async () => {
-        clearTimeout(timer);
-        await browser.close();
-        process.exit(0);
-    });
-
-    await waitPromise;
-    await browser.close();
-    
-    const { processRecordings } = require('./summary');
-    await processRecordings();
+function validateOptions(roomUrl, env = process.env) {
+    let url;
+    try { url = new URL(roomUrl); } catch { throw new Error('Укажите полный HTTPS-адрес комнаты Jitsi.'); }
+    if (url.protocol !== 'https:' || url.username || url.password) throw new Error('Нужен HTTPS-адрес комнаты без логина и пароля в URL.');
+    const duration = Number(env.RECORD_DURATION_MS || 1800000);
+    if (!Number.isSafeInteger(duration) || duration < 1000 || duration > 86400000) throw new Error('RECORD_DURATION_MS: целое число от 1000 до 86400000.');
+    return { url, duration };
 }
-
-const targetRoom = process.argv[2] || 'https://meet.jit.si/Room' + Math.random().toString(36).substring(7);
-runBot(targetRoom).catch(console.error);
+async function runBot(roomUrl) {
+    const { url, duration } = validateOptions(roomUrl);
+    if (process.env.RECORD_ONLY !== 'true') new (require('./transcription'))();
+    const dir = path.join(__dirname, 'recordings', `${new Date().toISOString().replace(/[:.]/g, '-')}-${randomUUID().slice(0, 8)}`);
+    await fs.mkdir(dir, { recursive: true });
+    const manifest = { id: path.basename(dir), createdAt: new Date().toISOString(), segments: [] };
+    await atomicJson(path.join(dir, 'session.json'), manifest);
+    let browser, page, timer, stopRequested;
+    let writes = Promise.resolve();
+    const stop = new Promise(resolve => { stopRequested = resolve; });
+    const onSignal = () => stopRequested();
+    process.once('SIGINT', onSignal);
+    process.once('SIGTERM', onSignal);
+    try {
+        browser = await chromium.launch({ headless: process.env.HEADLESS !== 'false', args: [
+            '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', '--autoplay-policy=no-user-gesture-required'
+        ] });
+        const context = await browser.newContext({ permissions: ['microphone'] });
+        page = await context.newPage();
+        await page.exposeFunction('saveAudioSegment', (base64, metadata) => {
+            const write = writes.then(async () => {
+                const file = `${randomUUID()}.webm`;
+                await fs.writeFile(path.join(dir, file), Buffer.from(base64, 'base64'));
+                manifest.segments.push({ ...metadata, file });
+                await atomicJson(path.join(dir, 'session.json'), manifest);
+            });
+            writes = write.catch(() => {});
+            return write;
+        });
+        const originalHash = url.hash.slice(1);
+        url.hash = [originalHash, 'config.prejoinConfig.enabled=false', 'config.startWithAudioMuted=true',
+            'config.startWithVideoMuted=true', 'userInfo.displayName="Meeting-Pro-Recorder"'].filter(Boolean).join('&');
+        await page.goto(url.href, { waitUntil: 'domcontentloaded', timeout: 60000 });
+        console.log('Ожидаю вход в Jitsi. Для лобби/авторизации используйте HEADLESS=false.');
+        await Promise.race([
+            page.waitForFunction(() => window.APP?.conference?._room?.isJoined?.(), null, { timeout: 120000 }),
+            stop.then(() => { throw new Error('Остановлено до входа в комнату.'); })
+        ]);
+        await page.addScriptTag({ path: path.join(__dirname, 'jitsi-ai-extension/recorder.js') });
+        await page.evaluate(() => {
+            window.meetingRecorder = new MeetingRecorder({ scanDom: true, onSegment: async (blob, metadata) => {
+                const base64 = await new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = () => resolve(reader.result.split(',')[1]);
+                    reader.onerror = () => reject(reader.error);
+                    reader.readAsDataURL(blob);
+                });
+                await window.saveAudioSegment(base64, metadata);
+            } });
+            window.meetingRecorder.start();
+        });
+        console.log(`Запись начата. Файлы: ${dir}. Ctrl+C — сохранить и завершить.`);
+        timer = setTimeout(stopRequested, duration);
+        page.once('close', stopRequested);
+        await stop;
+        if (page.isClosed()) throw new Error('Страница закрыта. Уже завершённые аудиоотрезки сохранены.');
+        const errors = await page.evaluate(() => window.meetingRecorder.stop());
+        if (errors.length) throw new Error(errors.join('\n'));
+    } finally {
+        clearTimeout(timer);
+        process.removeListener('SIGINT', onSignal);
+        process.removeListener('SIGTERM', onSignal);
+        await writes;
+        await browser?.close();
+    }
+    if (!manifest.segments.length) throw new Error('Аудиопотоки не найдены. Проверьте вход в комнату и звук участников.');
+    if (process.env.RECORD_ONLY !== 'true') {
+        const { errors } = await processRecordings(dir);
+        if (errors.length) throw new Error(`Аудио сохранено. ${errors.join('\n')}`);
+    }
+    console.log(`Готово: ${dir}`);
+    return dir;
+}
+if (require.main === module) runBot(process.argv[2]).catch(error => { console.error(error.message); process.exitCode = 1; });
+module.exports = { runBot, validateOptions };
